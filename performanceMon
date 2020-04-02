@@ -18,17 +18,20 @@ use POSIX;
 my $pidfile      = "/var/run/performanceMon/performanceMon.pid";
 my $runas        = "root";
 my $rungrp       = "root";
-my $computePatts = ["hpeesofsim", ];
+my $computePatts = ["hpeesofsim" ];
 my $inhibited    = 0;
 my $ncpus        = 1;
 my $inhFD;
+
+
+daemonize();
+
 openlog( "performanceMon", "", "local0" );
 Info("performanceMon started.");
 my $sysbus = Net::DBus->system;
 my $login1 = $sysbus->get_service( "org.freedesktop.login1" );
 my $Manager = $login1->get_object( "/org/freedesktop/login1","org.freedesktop.login1.Manager"); #,"org.freedesktop.login1.Manager");
 $ncpus = getNumCPU();
-daemonize();
 
 while (1) {
   if ( checkRunning() ) {
@@ -63,15 +66,20 @@ sub daemonize {
 
   # If already running, then exit (/var/run/basename($0).pid)
   if ( Proc::PID::File->running( dir => dirname($pidfile) ) ) {
+    print(STDERR "Already running\n");
     exit(0);
   }
   Proc::Daemon::Init(
-    {
+                     {
+                      work_dir => '/tmp',
       #setuid   => scalar( getpwnam($runas) ),
       #setgid   => scalar( getgrnam($rungrp) ),
-      pid_file => $pidfile
+                      pid_file => $pidfile,
+                      #child_STDOUT => '/tmp/logout',
+                      #child_STDERR => '/tmp/logerr',
     }
   );
+  print("OK\n");
 }
 
 sub getNumCPU {
