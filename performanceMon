@@ -1,0 +1,142 @@
+#!/usr/bin/perl
+#
+use strict;
+use File::Basename qw(dirname basename);
+use File::Path qw(make_path);
+use Proc::Daemon;
+use Proc::PID::File;
+use Sys::Syslog qw(:standard :macros);
+use Time::HiRes;
+use Net::DBus;
+use Net::DBus::Reactor;
+use Try::Tiny;
+use Data::Dumper qw(Dumper);
+use feature 'state';
+use Proc::ProcessTable;
+use POSIX;
+
+my $pidfile      = "/run/performanceMon.pid";
+my $runas        = "root";
+my $rungrp       = "root";
+my $computePatts = ["hpeesofsim", ];
+my $inhibited    = 0;
+my $ncpus        = 1;
+my $inhFD;
+openlog( "performanceMon", "", "local0" );
+Info("performanceMon started.");
+my $sysbus = Net::DBus->system;
+my $login1 = $sysbus->get_service( "org.freedesktop.login1" );
+my $Manager = $login1->get_object( "/org/freedesktop/login1","org.freedesktop.login1.Manager"); #,"org.freedesktop.login1.Manager");
+$ncpus = getNumCPU();
+daemonize();
+
+while (1) {
+  if ( checkRunning() ) {
+    if ( !$inhibited ) {
+      $inhFD = inhibit();
+      maxperformance();
+      $inhibited = 1;
+      Info("Enter high performance mode.");
+    }
+  } else {
+    if ($inhibited) {
+      POSIX::close($inhFD);
+      powersaveall();
+      $inhibited = 0;
+      Info("Enter powersave mode.");
+    }
+  }
+  sleep(5);
+}
+exit;
+
+# Fork, exec, drop privs and setpgrp to become a daemon. This program is meant to start life
+# as root, started by systemd
+sub daemonize {
+
+  #Daemonize, make sure we've got a writable directory for the pid file....
+  if ( !-d dirname($pidfile) ) {
+    make_path( dirname($pidfile) );
+  }
+  chown( scalar( getpwnam($runas) ), scalar( getgrnam($rungrp) ), dirname($pidfile) );
+  chmod( 0777, dirname($pidfile) );
+
+  # If already running, then exit (/var/run/basename($0).pid)
+  if ( Proc::PID::File->running( dir => dirname($pidfile) ) ) {
+    exit(0);
+  }
+  Proc::Daemon::Init(
+    {
+      setuid   => scalar( getpwnam($runas) ),
+      setgid   => scalar( getgrnam($rungrp) ),
+      pid_file => $pidfile
+    }
+  );
+}
+
+sub getNumCPU {
+  open my $handle, "/proc/cpuinfo" or die "Can't open cpuinfo: $!\n";
+  my $ncpu = scalar( map /^processor/, <$handle> );
+  close $handle;
+  return ($ncpu);
+}
+
+#Logging stuff
+sub Info {
+  my $format = shift;
+  my @args   = @_;
+  syslog( "info|local0", $format, @args );
+  return ();
+}
+
+sub Warn {
+  my $format = shift;
+  my @args   = @_;
+  syslog( "warn|local0", $format, @args );
+  return ();
+}
+
+sub Err {
+  my $format = shift;
+  my @args   = @_;
+  syslog( "err|local0", $format, @args );
+  return ();
+}
+
+sub inhibit {
+  my $fd = $Manager->Inhibit( "shutdown:sleep:idle", "performanceMon",
+                              "High priority computation in process", "block" );
+  return ($fd);
+}
+
+sub checkRunning {
+  my @tab;
+
+  state $pt = Proc::ProcessTable->new();
+
+  for my $p ( @{ $pt->table } ) {
+    for my $patt (@$computePatts) {
+      if ( $p->cmdline->[0] =~ /\Q$patt\E/ ) {
+        return (1);
+      }
+    }
+  }
+  return (0);
+}
+
+sub maxperformance {
+  for ( my $c = 0 ; $c < $ncpus ; $c++ ) {
+    open( G, sprintf( ">/sys/devices/system/cpu/cpufreq/policy%d/scaling_governor", $c ) );
+    print( G "performance\n" );
+    close(G);
+  }
+}
+
+sub powersaveall {
+  for ( my $c = 0 ; $c < $ncpus ; $c++ ) {
+    open( G, sprintf( ">/sys/devices/system/cpu/cpufreq/policy%d/scaling_governor", $c ) );
+    print( G "powersave\n" );
+    close(G);
+  }
+}
+
