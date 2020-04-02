@@ -14,16 +14,17 @@ use Data::Dumper qw(Dumper);
 use feature 'state';
 use Proc::ProcessTable;
 use POSIX;
+use Config::Simple;
+my $cfgFile      = "/etc/performanceMon.conf";
 my $pidfile      = "/var/run/performanceMon/performanceMon.pid";
 my $runas        = "root";
 my $rungrp       = "root";
-my $computePatts = ["hpeesofsim"];
+my $computePatts = [];
 my $inhibited    = 0;
 my $ncpus        = 1;
 my $inhFD;
-
+my $lastCheck = 0;
 daemonize();
-
 openlog( "performanceMon", "", "local0" );
 Info("performanceMon started.");
 my $sysbus  = Net::DBus->system;
@@ -32,6 +33,7 @@ my $Manager = $login1->get_object( "/org/freedesktop/login1", "org.freedesktop.l
 $ncpus = getNumCPU();
 
 while (1) {
+  rconfig();
   if ( checkRunning() ) {
     if ( !$inhibited ) {
       $inhFD = inhibit();
@@ -82,6 +84,15 @@ sub daemonize {
   print("OK\n");
 }
 
+sub rconfig {
+  if ( ( stat($cfgFile) )[9] > $lastCheck ) {
+    $lastCheck = time;
+    my $cfg    = Config::Simple->new($cfgFile);
+    my @cpatts = $cfg->param("CmdPatts");
+    $computePatts = \@cpatts;
+  }
+}
+
 sub getNumCPU {
   open my $handle, "/proc/cpuinfo" or die "Can't open cpuinfo: $!\n";
   my $ncpu = scalar( map /^processor/, <$handle> );
@@ -112,8 +123,8 @@ sub Err {
 }
 
 sub inhibit {
-  my $fd = $Manager->Inhibit( "shutdown:sleep:idle", "performanceMon",
-    "High priority computation in process", "block" );
+  my $fd =
+    $Manager->Inhibit( "shutdown:sleep:idle", "performanceMon", "High priority computation in process", "block" );
   return ($fd);
 }
 
