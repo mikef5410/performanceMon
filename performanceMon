@@ -15,7 +15,7 @@ use feature 'state';
 use Proc::ProcessTable;
 use POSIX;
 
-my $pidfile      = "/run/performanceMon.pid";
+my $pidfile      = "/var/run/performanceMon/performanceMon.pid";
 my $runas        = "root";
 my $rungrp       = "root";
 my $computePatts = ["hpeesofsim", ];
@@ -67,8 +67,8 @@ sub daemonize {
   }
   Proc::Daemon::Init(
     {
-      setuid   => scalar( getpwnam($runas) ),
-      setgid   => scalar( getgrnam($rungrp) ),
+      #setuid   => scalar( getpwnam($runas) ),
+      #setgid   => scalar( getgrnam($rungrp) ),
       pid_file => $pidfile
     }
   );

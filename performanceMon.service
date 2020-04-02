@@ -6,7 +6,7 @@ After=dbus.service
 [Service]
 Type=forking
 ExecStart=/usr/local/bin/performanceMon
-PIDFile=/run/performanceMon/performanceMon.pid
+PIDFile=/var/run/performanceMon/performanceMon.pid
 RestartSec=5
 Restart=always
 
