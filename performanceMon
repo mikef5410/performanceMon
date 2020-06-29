@@ -32,6 +32,7 @@ my $login1  = $sysbus->get_service("org.freedesktop.login1");
 my $Manager = $login1->get_object( "/org/freedesktop/login1", "org.freedesktop.login1.Manager" );
 $ncpus = getNumCPU();
 
+powersaveall();
 while (1) {
   rconfig();
   if ( checkRunning() ) {
@@ -134,6 +135,7 @@ sub checkRunning {
   for my $p ( @{ $pt->table } ) {
     for my $patt (@$computePatts) {
       if ( $p->cmdline->[0] =~ /\Q$patt\E/ ) {
+        Info("I see $patt. Going high perf.")  if ( !$inhibited );
         return (1);
       }
     }
